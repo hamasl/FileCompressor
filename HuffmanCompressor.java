@@ -3,8 +3,6 @@ import java.nio.file.Files;
 
 public class HuffmanCompressor {
     private final File file;
-    private final String fileName;
-    private final String fileType;
     private final int[] frequencies = new int[256];
     private int uniqueChars;
     private final byte[] input;
@@ -12,8 +10,6 @@ public class HuffmanCompressor {
 
     public HuffmanCompressor(File file) throws IOException {
         this.file = file;
-        this.fileName = file.getName().split("\\.")[0];
-        this.fileType = file.getName().split("\\.")[1];
         this.input = Files.readAllBytes(file.toPath());
     }
 
@@ -49,10 +45,10 @@ public class HuffmanCompressor {
         return huffmanTreeNodes;
     }
 
-    public String compress() throws IOException {
-        String fileName = "hufmannCompressed_" + this.fileName + ".txt";
+    public String compress(String fileName) throws IOException {
         File outputFile = new File(fileName);
         outputFile.createNewFile();
+        DataInputStream in = new DataInputStream(new BufferedInputStream(new FileInputStream(file)));
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)));
 
         countFrequencies();
@@ -61,50 +57,64 @@ public class HuffmanCompressor {
         for (int frequency : frequencies)
             out.writeInt(frequency);
 
-        int i = 0;
+        BitString[] output = new BitString[input.length];
+        int bitStringsReceived = 0;
+
         BitString bits = null;
         BitString toBeAdded = null;
-        while (i < input.length) {
-            if (toBeAdded != null && toBeAdded.getBitsUsed() <= 0)
-                toBeAdded = null;
-            if (bits == null && toBeAdded != null && toBeAdded.getBitsUsed() > 0) {
-                bits = toBeAdded;
-                toBeAdded = null;
-            } else if (bits == null)
-                bits = new BitString(codes[(input[i++] + BYTE_VALUE_ADJUSTMENT_CONSTANT)]);
-            if (bits.getBitsUsed() < 64 && i /* + 1 */ < input.length) {
-                if (toBeAdded == null)
-                    toBeAdded = new BitString(codes[(input[i++] + BYTE_VALUE_ADJUSTMENT_CONSTANT)]);
-                // In case the previous loop took all the bits from toBeAdded
-                if (toBeAdded.getBitsUsed() > 0) {
-                    int bitsToBeAdded = (64 - bits.getBitsUsed() < toBeAdded.getBitsUsed()) ? 64 - bits.getBitsUsed()
-                            : toBeAdded.getBitsUsed();
-                    bits.appendBitString(toBeAdded.shiftBits(bitsToBeAdded));
-                }
-            } else if (bits.getBitsUsed() < 64)
-                i++;
+        while (in.available() > 0) {
+            if (bits == null || bits.getBitsUsed() <= 0)
+                bits = new BitString(codes[in.readByte() + BYTE_VALUE_ADJUSTMENT_CONSTANT]);
+            if (bits.getBitsUsed() < 64) {
+                if (toBeAdded == null || toBeAdded.getBitsUsed() <= 0)
+                    toBeAdded = new BitString(codes[in.readByte() + BYTE_VALUE_ADJUSTMENT_CONSTANT]);
+                int bitsToBeAdded = (64 - bits.getBitsUsed() < toBeAdded.getBitsUsed()) ? 64 - bits.getBitsUsed()
+                        : toBeAdded.getBitsUsed();
+                bits.appendBitString(toBeAdded.shiftBits(bitsToBeAdded));
+            }
             if (bits.getBitsUsed() == 64) {
-                out.writeLong(bits.getBits());
-                bits = null;
+                output[bitStringsReceived++] = bits;
+                if (toBeAdded == null || toBeAdded.getBitsUsed() <= 0)
+                    bits = null;
+                else {
+                    bits = toBeAdded;
+                    toBeAdded = null;
+                }
             }
         }
         // Handles a situation where the last index is of less than 64 bytes
+
+        byte restBits = 0;
         if (bits != null) {
-            if (toBeAdded != null)
+            if (toBeAdded != null && toBeAdded.getBitsUsed() > 0)
                 bits.appendBitString(toBeAdded);
             while (bits.getBitsUsed() >= 8)
-                out.writeByte((byte) bits.shiftBits(8).getBits());
-            if (bits.getBitsUsed() > 0)
-                out.writeByte((byte) bits.getBits());
+                output[bitStringsReceived++] = bits.shiftBits(8);
+            if (bits.getBitsUsed() > 0) {
+                restBits = (byte) (8 - bits.getBitsUsed());
+                for (int i = 0; i < restBits; i++)
+                    bits.appendBit(0b0);
+                output[bitStringsReceived++] = bits;
+            }
         }
 
+        out.writeByte(restBits);
+        int i = 0;
+        while (output[i] != null) {
+            BitString b = output[i++];
+            if (b.getBitsUsed() == 64)
+                out.writeLong((long) b.getBits());
+            else if (b.getBitsUsed() == 8)
+                out.writeByte((byte) b.getBits());
+        }
+
+        in.close();
         out.flush();
         out.close();
         return fileName;
     }
 
-    public String decompress() throws IOException {
-        String fileName = "huffmanDecompressed_" + this.fileName + "." + fileType;
+    public String decompress(String fileName) throws IOException {
         File outputFile = new File(fileName);
         outputFile.createNewFile();
         DataOutputStream out = new DataOutputStream(new BufferedOutputStream(new FileOutputStream(outputFile)));
@@ -117,7 +127,9 @@ public class HuffmanCompressor {
                 uniqueChars++;
         }
 
-        // Building the binary table
+        byte restBits = in.readByte();
+
+        // Building the huffman tree
         HuffmanTree ht = HuffmanTree.createHuffmanTree(prepareHuffmanHeap());
 
         FrequencyTreeNode node;
@@ -125,8 +137,11 @@ public class HuffmanCompressor {
         while (in.available() > 0) {
             node = ht.getRoot();
             while (!(node instanceof HuffmanTreeNode)) {
-                if (bits == null || bits.getBitsUsed() <= 0)
+                if (bits == null || bits.getBitsUsed() <= 0) {
                     bits = new BitString(in.readByte(), 8);
+                    if (in.available() == 0)
+                        bits.popBits(restBits);
+                }
                 byte nextBit = (byte) bits.shiftBits(1).getBits();
                 if (nextBit == 0)
                     node = node.getLeftChild();
@@ -141,14 +156,5 @@ public class HuffmanCompressor {
         out.flush();
         out.close();
         return fileName;
-    }
-
-    public static void main(String[] args) throws IOException {
-        HuffmanCompressor hf = new HuffmanCompressor(new File("diverse.txt"));
-
-        HuffmanCompressor fh = new HuffmanCompressor(new File(hf.compress()));
-        fh.decompress();
-
-        // System.out.println(hf.intArrayEquals(hf.frequencies, fh.frequencies));
     }
 }
