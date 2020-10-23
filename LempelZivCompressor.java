@@ -5,7 +5,6 @@ import java.util.List;
 
 public class LempelZivCompressor {
     private final File file;
-    private final String fileName;
     private final byte[] input;
     private final static int LENGTH_OF_SEARCH = 2048;
     private final static int BYTES_TO_BE_SEARCHED_START_LENGTH = 150;
@@ -13,12 +12,10 @@ public class LempelZivCompressor {
 
     public LempelZivCompressor(File file) throws IOException {
         this.file = file;
-        this.fileName = file.getName().split("\\.")[0];
         this.input = Files.readAllBytes(file.toPath());
     }
 
-    public String compress() throws IOException {
-        String fileName = "lzCompressed_" + this.fileName + ".txt";
+    public String compress(String fileName) throws IOException {
         File outputFile = new File(fileName);
         outputFile.createNewFile();
 
@@ -84,8 +81,7 @@ public class LempelZivCompressor {
         return null;
     }
 
-    public String decompress(String fileType) throws IOException {
-        String fileName = "lzDecompressed_" + this.fileName + "." + fileType;
+    public String decompress(String fileName) throws IOException {
         File outputFile = new File(fileName);
         outputFile.createNewFile();
 
@@ -127,13 +123,5 @@ public class LempelZivCompressor {
             bytes[i] = buffer.get(i + startIndex);
         }
         return bytes;
-    }
-
-    public static void main(String[] args) throws IOException {
-
-        LempelZivCompressor lz = new LempelZivCompressor(new File("diverse.txt"));
-
-        LempelZivCompressor zl = new LempelZivCompressor(new File(lz.compress()));
-        zl.decompress("txt");
     }
 }

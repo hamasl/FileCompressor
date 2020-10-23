@@ -16,20 +16,22 @@ public class FileCompressor {
 
         File f = null;
         if (choice == 1) {
+            System.out.println("Compression starting");
             lz = new LempelZivCompressor(inputFile);
-            f = new File(lz.compress());
+            f = new File(lz.compress("lzCompressed_" + PATH_NAME));
             hf = new HuffmanCompressor(f);
             System.out.println("Finished Lempel-Ziv compression\nHuffman compression starting");
-            hf.compress();
+            hf.compress("Compressed_" + PATH_NAME);
 
         } else if (choice == 2) {
-            System.out.println("Enter wished filetype for the decompressed file: ");
-            String fileType = scanner.nextLine();
+            System.out.println("Decompression starting");
+            System.out.println("Enter wished name of file for the decompressed file (with fileType): ");
+            String fileName = scanner.nextLine();
             hf = new HuffmanCompressor(inputFile);
-            f = new File(hf.decompress());
+            f = new File(hf.decompress("hfCompressed_" + PATH_NAME));
             lz = new LempelZivCompressor(f);
             System.out.println("Finished Huffman decompression\nLempel-ziv decompression starting");
-            lz.decompress(fileType);
+            lz.decompress(fileName);
         } else {
             System.out.println("Choice not valid");
         }
